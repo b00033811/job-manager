@@ -16,6 +16,7 @@ logging.basicConfig(format='%(asctime)s %(message)s',
  datefmt='%m/%d/%Y %I:%M:%S %p',level=logging.DEBUG)
 class jobManager():
     def __init__(self):
+        self.frequency=60*15
         self.MSEC=1
         self.SEC=self.MSEC*1000
         self.MIN=60*self.SEC
@@ -35,7 +36,7 @@ class jobManager():
                 raise ValueError('Enviroment variable not set: JOBMANAGER') 
         except ValueError as e:
             exit(e)
-        filename=self.config['LOG_DIR'].get()
+        filename=self.config['STREAM_LOG_DIR'].get()
         if os.path.exists(filename):
             logging.warn('Log File Detected!')
         # Intialize Redis Time Series Client
@@ -59,32 +60,51 @@ class jobManager():
         con_file_dir=self.config.user_config_path()
         logging.warn('Config file Directory: {0} | User Config File:{1}'.format(directory,con_file_dir))
     def pull(self):
-        stream=self.config['STREAM'].get()
-        filename=self.config['LOG_DIR'].get()
-        if os.path.exists(filename):
-            with open(filename,'r') as log:
+        self.stream=self.config['STREAM'].get()
+        self.stream_log_filename=self.config['STREAM_LOG_DIR'].get()
+        self.proc_log_filename=self.config['PROC_LOG_DIR'].get()
+        if os.path.exists(self.stream_log_filename) & os.path.exists(self.proc_log_filename):
+            with open(self.stream_log_filename,'r') as log:
                 # open log file and grab the id of the last messege consumed
                 ids=log.readlines()
                 last_id = ids[-1]
                 # query and grab the last timestamp and parse it
-                new_records=self.rts.xread({stream: last_id},15,1*self.SEC)
+                new_records=self.rts.xread({self.stream: last_id},15,1*self.SEC)
                 if new_records!=[]:
                     n_records=len(new_records[0][1])
                     last_id=new_records[0][1][-1][0]
-                    with open(filename, 'a') as log:
+                    with open(self.stream_log_filename, 'a') as log:
                         log.write(os.linesep+last_id)
                         logging.warn('Records added: {0}'.format(n_records))
                 else:
                     logging.warn('No New Records')
 
         else:
-            logging.warn('Could not locate log file, consuming data data ...')
+            logging.warn('Could not locate log files, scaning all available \
+                data in the stream and deploying redis jobs from the beginning of the stream')
             # os.makedirs(os.path.dirname(filename), exist_ok=True)
-            new_records=self.rts.xread({stream: '0-0'},15,0)
-            last_id=new_records[0][1][-1][0]
-            logging.warn(last_id)
-            with open(filename, 'w') as log:
-                log.write(last_id)
+            self.new_records=self.rts.xread({self.stream: '0-0'},None,0)
+            self.stream_record=self.new_records[0][1][-1]
+            self.proc_record=self.new_records[0][1][0]
+            self.stream_pointer=self.stream_record[0]
+            self.proc_pointer=self.proc_record[0]
+            with open(self.stream_log_filename,'w') as stream_log,open(self.proc_log_filename,'w') as proc_log:
+                stream_log.write(self.stream_pointer)
+                proc_log.write(self.proc_pointer)
+            
+            self.create(self.frequency)
+
+    def create(self,k):
+        with open(self.proc_log_filename,'a') as proc_log:
+            for i,x in enumerate(self.new_records[0][1]):
+                t=int(x[1]['time'])
+                t0=int(self.proc_record[1]['time'])
+                if (t-t0)>=k:
+                    print('JOB DEPLOYED tdelta={0}, event time start: {1}, Last Consumed Event Time: {2}'.format(t-t0,t0,self.stream_record[1]['time']))
+                    self.proc_record=self.new_records[0][1][i]
+                    self.proc_pointer=self.proc_record[0]
+                    proc_log.write(os.linesep+self.proc_pointer)
+
 if __name__== "__main__":
     consumer=jobManager()
     while(True):
