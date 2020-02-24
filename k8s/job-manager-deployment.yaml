@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: job-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: job-manager
+  template:
+    metadata:
+      labels:
+        component: job-manager
+    spec:
+      containers:
+        - name: job-manager
+          image: localhost:5000/jobmanager:dev
+          ports:
+            - containerPort: 5012
+          env:
+            - name: JOBMANAGER
+              value: jobmanager
+          volumeMounts:
+            - name: config-volume
+              mountPath: root/.config/jobmanager
+            - name: task-pv-storage
+              mountPath: logs/
+      volumes:
+        - name: config-volume
+          configMap:
+            name: job-manager-config
+        - name: task-pv-storage
+          persistentVolumeClaim:
+            claimName: task-pv-claim

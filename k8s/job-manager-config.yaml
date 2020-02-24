@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: job-manager-config
+  namespace: default
+data:
+    config.yaml: | 
+      REDIS_HOST: redis-cluster-ip-service
+      REDIS_PORT: 6379
+      STREAM: my_stream
+      DATABASE_KEY: Temperature
+      STREAM_LOG_DIR: /logs/stream_log.txt
+      PROC_LOG_DIR: /logs/proc_log.txt
+      START_TIME: 1582112737 
+      FREQUENCY: 300
